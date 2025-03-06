@@ -5,6 +5,3 @@ provider "aws" {
   token       = var.aws_session_token
 }
 
-provider "vault" {
-  address = "http://${aws_instance.vault.public_ip}:8200"
-}

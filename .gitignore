@@ -1,0 +1,31 @@
+# Ignore SSH private and public keys
+vault-demo-key.pem
+vault-demo-key.pem.pub
+
+# Ignore Vault license file
+vault.hclic
+
+# Ignore Terraform state files & backup files
+*.tfstate
+*.tfstate.backup
+
+# Ignore sensitive files from Terraform apply
+unseal-keys.txt
+root-token.txt
+
+# Ignore Terraform plan output (if saved to file)
+*.tfplan
+
+# Ignore IDE/editor metadata (optional)
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Ignore logs and temp files
+*.log
+*.tmp
+*.bak
+
+# Ignore output.json if you decide to generate outputs to a file
+outputs.json

@@ -43,7 +43,8 @@ resource "aws_instance" "vault" {
   user_data = templatefile("${path.module}/vault-install/user_data.tpl", {
     vault_version = "1.16.0+ent"
     region        = "us-east-1"
-  })
+})
+
 
   provisioner "file" {
     source      = "${path.module}/vault.hclic"

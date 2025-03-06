@@ -1,97 +1,82 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
+provider "aws" {
+  region                  = "us-east-1"
+  access_key               = var.aws_access_key
+  secret_key               = var.aws_secret_key
+  token                     = var.aws_session_token
 }
 
-# AWS VPC to host Vault
-resource "aws_vpc" "vault_vpc" {
-  cidr_block = "10.0.0.0/16"
-  tags = {
-    Name = "${var.vault_cluster_name}-vpc"
-  }
+# VPC Module (same as before)
+module "vpc" {
+  source = "terraform-aws-modules/vpc/aws"
+  name = "vault-demo-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["us-east-1a", "us-east-1b"]
+  public_subnets  = ["10.0.1.0/24", "10.0.2.0/24"]
+  private_subnets = ["10.0.3.0/24", "10.0.4.0/24"]
+
+  enable_nat_gateway   = true
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 }
 
-# Subnet inside VPC
-resource "aws_subnet" "vault_subnet" {
-  vpc_id     = aws_vpc.vault_vpc.id
-  cidr_block = "10.0.1.0/24"
-  tags = {
-    Name = "${var.vault_cluster_name}-subnet"
-  }
-}
-
-# Security Group to allow Vault UI and SSH access (adjust for prod)
-resource "aws_security_group" "vault_sg" {
-  vpc_id = aws_vpc.vault_vpc.id
+# Vault Security Group
+resource "aws_security_group" "vault" {
+  vpc_id = module.vpc.vpc_id
 
   ingress {
-    from_port   = 8200  # Vault UI/API port
+    from_port   = 8200
     to_port     = 8200
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]  # Lock this down for real environments
   }
 
   ingress {
-    from_port   = 22    # SSH for debugging (optional)
+    from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.vault_cluster_name}-sg"
-  }
 }
 
-# S3 bucket to serve as Vault's storage backend
-resource "aws_s3_bucket" "vault_backend" {
-  bucket        = "${var.vault_cluster_name}-backend"
-  force_destroy = true  # Allows destroying bucket during cleanup (for demo only)
-}
+# Vault EC2 Instance
+resource "aws_instance" "vault" {
+  ami                    = "ami-0c55b159cbfafe1f0"  # Amazon Linux 2
+  instance_type          = "t3.medium"
+  subnet_id               = module.vpc.public_subnets[0]
+  security_groups        = [aws_security_group.vault.name]
 
-# Vault server instance
-resource "aws_instance" "vault_server" {
-  ami             = "ami-0c55b159cbfafe1f0" # Amazon Linux 2 (adjust as needed)
-  instance_type   = "t3.medium"
-  subnet_id       = aws_subnet.vault_subnet.id
-  security_groups = [aws_security_group.vault_sg.name]
-
-  user_data = templatefile("${path.module}/user_data.tpl", {
-    vault_config = templatefile("${path.module}/vault-config.tpl", {
-      storage_bucket = aws_s3_bucket.vault_backend.bucket
-      region         = var.aws_region
-      cluster_name   = var.vault_cluster_name
-    })
+  user_data = templatefile("${path.module}/vault-install/user_data.tpl", {
+    vault_version = "1.16.0+ent"
+    license       = var.vault_license
+    region        = "us-east-1"
   })
 
   tags = {
-    Name = "${var.vault_cluster_name}-server"
+    Name = "vault-enterprise-server"
   }
 }
 
-# After Vault instance is up, run unseal process
-resource "null_resource" "init_and_unseal" {
-  depends_on = [aws_instance.vault_server]
+# Output Vault URL
+output "vault_address" {
+  value = "http://${aws_instance.vault.public_ip}:8200"
+}
 
-  provisioner "local-exec" {
-    command = <<EOT
-      chmod +x ./unseal.sh
-      ./unseal.sh http://${aws_instance.vault_server.public_ip}:8200
-    EOT
-  }
+# EKS Cluster (same as before)
+module "eks" {
+  source = "terraform-aws-modules/eks/aws"
+  cluster_name    = "vault-demo-cluster"
+  cluster_version = "1.28"
 
-  triggers = {
-    instance_id = aws_instance.vault_server.id
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  eks_managed_node_groups = {
+    default = {
+      desired_size = 2
+      max_size     = 3
+      min_size     = 1
+      instance_types = ["t3.medium"]
+    }
   }
 }

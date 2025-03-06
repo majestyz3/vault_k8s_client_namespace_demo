@@ -1,0 +1,9 @@
+```gitignore
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+terraform.tfvars
+*.pem
+*.key
+vault.hclic
+*.json

@@ -1,5 +1,5 @@
-variable "aws_region" {
-  description = "AWS region to deploy Vault in"
+variable "ssh_private_key" {
+  description = "ssh key"
   type        = string
 }
 
@@ -18,8 +18,4 @@ variable "aws_session_token" {
   type        = string
 }
 
-variable "vault_cluster_name" {
-  description = "Name of the Vault cluster"
-  type        = string
-  default     = "vault-enterprise-demo"
-}
+

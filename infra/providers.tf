@@ -1,5 +1,4 @@
 terraform {
-  required_version = ">= 1.3.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -10,4 +9,5 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+  # Authentication via Doormat Credential Server (assumes AWS_CONTAINER_CREDENTIALS_FULL_URI is set)
 }

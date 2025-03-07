@@ -1,99 +1,70 @@
 #!/bin/bash
-
 set -e
 
-# Variables
-VAULT_VERSION="1.16.0+ent"
-VAULT_LICENSE_PATH="/etc/vault/vault.hclic"
-INIT_FILE="/etc/vault/vault-init.json"
-UNSEAL_KEYS_FILE="/etc/vault/unseal-keys.txt"
-ROOT_TOKEN_FILE="/etc/vault/root-token.txt"
-OUTPUTS_FILE="/etc/vault/vault-outputs.txt"
+echo "🚀 Starting All-In-One Deployment for Vault + EKS Demo"
 
-# Install Vault
-sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
-sudo yum install -y vault jq
-
-# Create Config Directory
-sudo mkdir -p /etc/vault /opt/vault/data
-
-# Move License File
-sudo mv ~/vault.hclic $VAULT_LICENSE_PATH
-sudo chmod 600 $VAULT_LICENSE_PATH
-
-# Write Vault Config
-sudo tee /etc/vault/vault.hcl > /dev/null <<EOT
-ui = true
-disable_mlock = true
-
-storage "file" {
-  path = "/opt/vault/data"
-}
-
-listener "tcp" {
-  address     = "0.0.0.0:8200"
-  tls_disable = true
-}
-
-license_path = "$VAULT_LICENSE_PATH"
-EOT
-
-# Create Systemd Service
-sudo tee /etc/systemd/system/vault.service > /dev/null <<EOT
-[Unit]
-Description=Vault - A tool for managing secrets
-Requires=network-online.target
-After=network-online.target
-
-[Service]
-ExecStart=/usr/bin/vault server -config=/etc/vault/vault.hcl
-Restart=on-failure
-User=root
-Group=root
-
-[Install]
-WantedBy=multi-user.target
-EOT
-
-# Start Vault Service
-sudo systemctl daemon-reload
-sudo systemctl enable vault
-sudo systemctl start vault
-
-# Wait for Vault to start
-sleep 10
-
-# Init and Unseal (only if not already initialized)
-if [ ! -f $INIT_FILE ]; then
-    export VAULT_ADDR="http://127.0.0.1:8200"
-
-    vault operator init -format=json | sudo tee $INIT_FILE
-
-    jq -r '.unseal_keys_b64[]' $INIT_FILE | sudo tee $UNSEAL_KEYS_FILE
-    jq -r '.root_token' $INIT_FILE | sudo tee $ROOT_TOKEN_FILE
-
-    vault operator unseal $(head -n 1 $UNSEAL_KEYS_FILE)
-    vault operator unseal $(sed -n '2p' $UNSEAL_KEYS_FILE)
-    vault operator unseal $(sed -n '3p' $UNSEAL_KEYS_FILE)
-
-    echo 'export VAULT_ADDR="http://127.0.0.1:8200"' | sudo tee -a /etc/profile
-    echo 'export VAULT_ADDR="http://127.0.0.1:8200"' >> ~/.bashrc
+# ------------------------------------------------------------------------------
+# Step 1 - Check if Doormat Credential Server is running
+# ------------------------------------------------------------------------------
+if ! curl -s http://127.0.0.1:9000 > /dev/null; then
+    echo "❌ Doormat Credential Server is not running. Please run 'doormat cred-server' in a separate terminal."
+    exit 1
+else
+    echo "✅ Doormat Credential Server is already running."
 fi
 
-# Generate Outputs File
-PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+# Set necessary environment variables for Terraform
+export AWS_CONTAINER_CREDENTIALS_FULL_URI="http://127.0.0.1:9000/role/aws_majid.zarkesh_test"
+export AWS_REGION="us-east-1"
 
-sudo tee $OUTPUTS_FILE > /dev/null <<EOT
-Vault Public IP: $PUBLIC_IP
-Vault Unseal Keys:
-$(cat $UNSEAL_KEYS_FILE)
+echo "🔗 AWS_CONTAINER_CREDENTIALS_FULL_URI set to: $AWS_CONTAINER_CREDENTIALS_FULL_URI"
+echo "🌍 AWS_REGION set to: $AWS_REGION"
 
-Vault Root Token:
-$(cat $ROOT_TOKEN_FILE)
+# ------------------------------------------------------------------------------
+# Step 2 - Terraform Init and Apply for Infrastructure
+# ------------------------------------------------------------------------------
+echo "⚙️ Running terraform init..."
+cd infra
+terraform init
 
-Vault UI URL: http://$PUBLIC_IP:8200
-EOT
+echo "✅ Running terraform apply..."
+terraform apply -auto-approve
 
-echo "✅ Vault installation, initialization, and unseal complete!"
-echo "📄 Vault outputs saved to $OUTPUTS_FILE"
+# Capture outputs into variables
+eks_cluster_ca=$(terraform output -raw eks_cluster_ca)
+eks_cluster_endpoint=$(terraform output -raw eks_cluster_endpoint)
+vault_public_ip=$(terraform output -raw vault_public_ip)
+
+# Save to deployment-outputs.txt
+cat <<EOF > ../deployment-outputs.txt
+eks_cluster_ca = "$eks_cluster_ca"
+eks_cluster_endpoint = "$eks_cluster_endpoint"
+vault_public_ip = "$vault_public_ip"
+EOF
+
+echo "📄 Outputs saved to deployment-outputs.txt"
+
+# ------------------------------------------------------------------------------
+# Step 3 - SCP Files to EC2 Instance
+# ------------------------------------------------------------------------------
+echo "📂 Copying Vault install script, license file, and key to Vault instance"
+
+scp -o StrictHostKeyChecking=no -i ../vault-demo-key.pem vault-install/install_vault.sh ec2-user@$vault_public_ip:/home/ec2-user/
+scp -o StrictHostKeyChecking=no -i ../vault-demo-key.pem vault-install/vault.hclic ec2-user@$vault_public_ip:/home/ec2-user/
+
+# ------------------------------------------------------------------------------
+# Step 4 - SSH into EC2 and Run Install Script
+# ------------------------------------------------------------------------------
+echo "💻 Running Vault installation and initialization script remotely"
+
+ssh -o StrictHostKeyChecking=no -i ../vault-demo-key.pem ec2-user@$vault_public_ip "chmod +x /home/ec2-user/install_vault.sh && sudo /home/ec2-user/install_vault.sh"
+
+# ------------------------------------------------------------------------------
+# Step 5 - Retrieve Vault Init Output and Store Locally
+# ------------------------------------------------------------------------------
+scp -o StrictHostKeyChecking=no -i ../vault-demo-key.pem ec2-user@$vault_public_ip:/home/ec2-user/vault-init-output.json ../vault-init-output.json
+
+echo "✅ Vault initialized, and init output saved to vault-init-output.json"
+
+echo "🎉 Deployment completed successfully!"
+

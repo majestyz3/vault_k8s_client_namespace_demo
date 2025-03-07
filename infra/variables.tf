@@ -9,3 +9,8 @@ variable "ssh_private_key" {
   type        = string
   default     = "../vault-demo-key.pem"
 }
+
+variable "vault_license" {
+  description = "Vault Enterprise License string"
+  type        = string
+}

@@ -90,11 +90,12 @@ resource "aws_instance" "vault" {
   vpc_security_group_ids = [aws_security_group.vault.id]
   key_name                = "vault-demo-key"
 
-  user_data = templatefile("${path.module}/vault-install/user_data.tpl", {
+ user_data = templatefile("${path.module}/vault-install/user_data.tpl", {
     vault_version = "1.16.0+ent"
     region        = var.aws_region
     vault_config  = file("${path.module}/vault-install/vault-config.tpl")
-  })
+    vault_license = var.vault_license  # This is the missing line
+})
 
   tags = {
     Name        = "vault-demo-instance"

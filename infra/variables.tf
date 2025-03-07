@@ -1,16 +1,19 @@
 variable "aws_region" {
-  description = "AWS Region"
+  description = "AWS region for deployment"
   type        = string
-  default     = "us-east-1"
 }
 
 variable "ssh_private_key" {
-  description = "Path to the private SSH key to connect to the EC2 instance"
+  description = "Path to the SSH private key"
   type        = string
-  default     = "../vault-demo-key.pem"
 }
 
 variable "vault_license" {
-  description = "Vault Enterprise License string"
+  description = "Vault Enterprise License (from terraform.tfvars)"
+  type        = string
+}
+
+variable "vault_license" {
+  description = "Vault Enterprise License (from terraform.tfvars)"
   type        = string
 }

@@ -1,4 +1,3 @@
-
 # ------------------------------------------------------------------------------
 # VPC Module - Creates Network Infrastructure
 # ------------------------------------------------------------------------------
@@ -36,6 +35,7 @@ module "eks" {
     }
   }
 }
+
 
 # ------------------------------------------------------------------------------
 # Lookup Latest Amazon Linux 2 AMI
@@ -81,6 +81,19 @@ resource "aws_security_group" "vault" {
 }
 
 # ------------------------------------------------------------------------------
+# public ip for vault  
+# ------------------------------------------------------------------------------
+resource "aws_eip" "vault" {
+  instance = aws_instance.vault.id
+  domain   = "vpc"
+
+  tags = {
+    Name = "zarkesh-vault-demo-eip"
+    Project = "Vault K8S Client Namespace Demo"
+  }
+}
+
+# ------------------------------------------------------------------------------
 # EC2 Instance for Vault Server
 # ------------------------------------------------------------------------------
 resource "aws_instance" "vault" {
@@ -88,34 +101,19 @@ resource "aws_instance" "vault" {
   instance_type          = "t3.medium"
   subnet_id              = module.vpc.public_subnets[0]
   vpc_security_group_ids = [aws_security_group.vault.id]
-  key_name                = "vault-demo-key"
+  key_name               = "vault-demo-key"
 
- user_data = templatefile("${path.module}/vault-install/user_data.tpl", {
-    vault_version = "1.16.0+ent"
+  user_data = templatefile("${path.module}/vault-install/user_data.hcl", {
+    vault_version = "1.19.0+ent"
     region        = var.aws_region
-    vault_config  = file("${path.module}/vault-install/vault-config.tpl")
-    vault_license = var.vault_license  # This is the missing line
-})
+    vault_config  = file("${path.module}/vault-install/vault-config.hcl")
+    vault_license = var.vault_license  # Directly pass the license string
+  })
 
   tags = {
-    Name        = "vault-demo-instance"
+    Name        = "zarkesh-vault-demo-instance"
     Project     = "Vault K8S Client Namespace Demo"
     Environment = "Demo"
     Owner       = "Majid Zarkesh"
   }
 }
-
-# ------------------------------------------------------------------------------
-# Elastic IP for Vault Instance
-# ------------------------------------------------------------------------------
-resource "aws_eip" "vault" {
-  instance = aws_instance.vault.id
-  tags = {
-    Name        = "vault-demo-eip"
-    Project     = "Vault K8S Client Namespace Demo"
-    Environment = "Demo"
-  }
-}
-
-
-

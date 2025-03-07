@@ -1,5 +1,5 @@
 output "vault_public_ip" {
-  description = "Public IP of the Vault instance"
+  description = "Public IP of the Vault EC2 instance"
   value       = aws_eip.vault.public_ip
 }
 

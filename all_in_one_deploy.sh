@@ -1,64 +1,81 @@
 #!/bin/bash
-
 set -e
 
-echo "🚀 Starting All-in-One Deployment for Vault on EKS"
+# Variables
+SSH_KEY="vault-demo-key.pem"
+AWS_REGION="us-east-1"
+TF_DIR="infra"
 
-# Step 1: Set AWS Region (Optional, since this is now in your variables.tf)
-export AWS_REGION="us-east-1"
+# ✅ Step 1 - Retrieve latest credentials from Doormat
+echo "🔑 Retrieving fresh credentials from Doormat..."
+doormat aws export --account aws_majid.zarkesh_test
+echo "✅ AWS credentials retrieved and exported to environment."
 
-# Step 2: Run Terraform Init
-echo "⚙️ Running terraform init in infra..."
-cd infra
+# ✅ Step 2 - Set Region (recommended to explicitly set)
+export AWS_REGION="$AWS_REGION"
+echo "🌍 AWS_REGION set to: $AWS_REGION"
+
+# ✅ Step 3 - Terraform Init & Apply
+cd "$TF_DIR"
+echo "⚙️ Running terraform init..."
 terraform init
 
-# Step 3: Apply Infrastructure (VPC, EKS, Vault EC2)
-echo "✅ Running terraform apply for infrastructure..."
+echo "✅ Running terraform apply..."
 terraform apply -auto-approve
 
-# Step 4: Extract Outputs (EKS Cluster & Vault Public IP)
-echo "📤 Fetching deployment outputs..."
-eks_cluster_endpoint=$(terraform output -raw eks_cluster_endpoint)
-eks_cluster_ca=$(terraform output -raw eks_cluster_ca)
-vault_public_ip=$(terraform output -raw vault_public_ip)
+# ✅ Step 4 - Capture Outputs
+VAULT_PUBLIC_IP=$(terraform output -raw vault_public_ip)
+EKS_CLUSTER_ENDPOINT=$(terraform output -raw eks_cluster_endpoint)
+EKS_CLUSTER_CA=$(terraform output -raw eks_cluster_ca)
 
-# Step 5: Copy install script and Vault license to the Vault instance
-echo "📦 Copying install script and license to Vault EC2 instance..."
-scp -o StrictHostKeyChecking=no -i ../vault-demo-key.pem \
-    ../infra/vault-install/install_vault.sh \
-    ../infra/vault-install/vault.hclic \
-    ec2-user@${vault_public_ip}:/home/ec2-user/
-
-# Step 6: Execute Vault installation script on the EC2 instance
-echo "⚙️ Running Vault installation script on EC2 instance..."
-ssh -o StrictHostKeyChecking=no -i ../vault-demo-key.pem ec2-user@${vault_public_ip} "sudo bash /home/ec2-user/install_vault.sh"
-
-# Step 7: Initialize Vault and capture Unseal Keys & Root Token
-echo "🔑 Initializing Vault..."
-ssh -o StrictHostKeyChecking=no -i ../vault-demo-key.pem ec2-user@${vault_public_ip} 'vault operator init -format=json | tee /home/ec2-user/vault-init.json'
-
-# Step 8: Pull Unseal Keys & Root Token to local machine
-echo "📥 Fetching unseal keys and root token..."
-scp -o StrictHostKeyChecking=no -i ../vault-demo-key.pem ec2-user@${vault_public_ip}:/home/ec2-user/vault-init.json ../vault-init.json
-
-# Extract and store them in deployment-outputs.txt
-unseal_keys=$(jq -r '.unseal_keys_b64 | join(", ")' ../vault-init.json)
-root_token=$(jq -r '.root_token' ../vault-init.json)
-
-# Step 9: Save everything into deployment-outputs.txt
+echo "📄 Capturing outputs to deployment-outputs.txt..."
 cat <<EOF > ../deployment-outputs.txt
-eks_cluster_endpoint = "$eks_cluster_endpoint"
-eks_cluster_ca = "$eks_cluster_ca"
-vault_public_ip = "$vault_public_ip"
-unseal_keys = "$unseal_keys"
-root_token = "$root_token"
+eks_cluster_endpoint = "$EKS_CLUSTER_ENDPOINT"
+eks_cluster_ca = "$EKS_CLUSTER_CA"
+vault_public_ip = "$VAULT_PUBLIC_IP"
 EOF
 
-echo "📄 Outputs saved to deployment-outputs.txt"
-
-# Step 10: Configure Kubernetes access (this is optional and could be moved to configure phase)
-echo "🔗 Configuring kubectl for EKS cluster..."
-aws eks update-kubeconfig --region $AWS_REGION --name vault-demo-cluster
-
-echo "🎉 Deployment completed successfully!"
 cd ..
+
+# ✅ Step 5 - Upload Vault Files to EC2
+echo "📂 Uploading necessary files to EC2 instance ($VAULT_PUBLIC_IP)..."
+
+scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "infra/vault-install/vault.hclic" ec2-user@"$VAULT_PUBLIC_IP":/home/ec2-user/vault.hclic
+scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "infra/vault-install/install_vault.sh" ec2-user@"$VAULT_PUBLIC_IP":/home/ec2-user/install_vault.sh
+scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "infra/vault-install/vault-config.hcl" ec2-user@"$VAULT_PUBLIC_IP":/home/ec2-user/vault-config.hcl
+
+# ✅ Step 6 - Install Vault & Configure Service
+echo "🚀 Running Vault install script on EC2 instance..."
+ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ec2-user@"$VAULT_PUBLIC_IP" 'chmod +x /home/ec2-user/install_vault.sh && sudo /home/ec2-user/install_vault.sh'
+
+# ✅ Step 7 - Initialize & Unseal Vault
+echo "🔑 Initializing and unsealing Vault..."
+ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ec2-user@"$VAULT_PUBLIC_IP" <<'EOF'
+export VAULT_ADDR="http://127.0.0.1:8200"
+if [ ! -f /home/ec2-user/.vault_initialized ]; then
+    vault operator init -format=json > /home/ec2-user/init.json
+    jq -r '.unseal_keys_b64[]' /home/ec2-user/init.json > /home/ec2-user/unseal-keys.txt
+    jq -r '.root_token' /home/ec2-user/init.json > /home/ec2-user/root-token.txt
+    touch /home/ec2-user/.vault_initialized
+fi
+
+UNSEAL_KEYS=$(cat /home/ec2-user/unseal-keys.txt)
+for key in $UNSEAL_KEYS; do
+    vault operator unseal "$key"
+done
+EOF
+
+# ✅ Step 8 - Fetch Unseal Keys & Root Token Back to Local
+echo "📥 Fetching Vault unseal keys and root token..."
+scp -o StrictHostKeyChecking=no -i "$SSH_KEY" ec2-user@"$VAULT_PUBLIC_IP":/home/ec2-user/unseal-keys.txt ./unseal-keys.txt
+scp -o StrictHostKeyChecking=no -i "$SSH_KEY" ec2-user@"$VAULT_PUBLIC_IP":/home/ec2-user/root-token.txt ./root-token.txt
+
+cat <<EOF >> deployment-outputs.txt
+Vault Unseal Keys:
+$(cat unseal-keys.txt)
+
+Vault Root Token:
+$(cat root-token.txt)
+EOF
+
+echo "✅ All tasks completed successfully!"

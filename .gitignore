@@ -29,3 +29,6 @@ root-token.txt
 
 # Ignore output.json if you decide to generate outputs to a file
 outputs.json
+
+*ansible-configure
+*.txt

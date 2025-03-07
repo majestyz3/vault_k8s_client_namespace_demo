@@ -1,7 +1,11 @@
-variable "aws_access_key" {}
-variable "aws_secret_key" {}
-variable "aws_session_token" {}
+variable "aws_region" {
+  description = "AWS Region"
+  type        = string
+  default     = "us-east-1"
+}
 
 variable "ssh_private_key" {
-  default = "../vault-demo-key.pem"
+  description = "Path to the private SSH key to connect to the EC2 instance"
+  type        = string
+  default     = "../vault-demo-key.pem"
 }

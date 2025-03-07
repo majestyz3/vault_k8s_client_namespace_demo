@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+cat <<EOF > /etc/vault/vault.hclic
+${vault_license}
+EOF
+
 sudo yum install -y jq unzip
 
 curl -L https://releases.hashicorp.com/vault/${vault_version}/vault_${vault_version}_linux_amd64.zip -o vault.zip

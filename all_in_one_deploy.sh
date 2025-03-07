@@ -70,12 +70,17 @@ echo "📥 Fetching Vault unseal keys and root token..."
 scp -o StrictHostKeyChecking=no -i "$SSH_KEY" ec2-user@"$VAULT_PUBLIC_IP":/home/ec2-user/unseal-keys.txt ./unseal-keys.txt
 scp -o StrictHostKeyChecking=no -i "$SSH_KEY" ec2-user@"$VAULT_PUBLIC_IP":/home/ec2-user/root-token.txt ./root-token.txt
 
-cat <<EOF >> deployment-outputs.txt
-Vault Unseal Keys:
-$(cat unseal-keys.txt)
+# Collect Outputs
+vault_public_ip=$(terraform -chdir=infra output -raw vault_public_ip)
+eks_cluster_endpoint=$(terraform -chdir=infra output -raw eks_cluster_endpoint)
+eks_cluster_ca=$(terraform -chdir=infra output -raw eks_cluster_ca)
+vault_auto_unseal_kms_key_arn=$(terraform -chdir=infra output -raw vault_auto_unseal_kms_key_arn)
 
-Vault Root Token:
-$(cat root-token.txt)
+cat <<EOF > deployment-outputs.txt
+eks_cluster_endpoint = "${eks_cluster_endpoint}"
+eks_cluster_ca = "${eks_cluster_ca}"
+vault_public_ip = "${vault_public_ip}"
+vault_auto_unseal_kms_key_arn = "${vault_auto_unseal_kms_key_arn}"
 EOF
 
 echo "✅ All tasks completed successfully!"

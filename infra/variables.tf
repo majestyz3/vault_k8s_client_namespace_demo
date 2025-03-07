@@ -13,7 +13,4 @@ variable "vault_license" {
   type        = string
 }
 
-variable "vault_license" {
-  description = "Vault Enterprise License (from terraform.tfvars)"
-  type        = string
-}
+

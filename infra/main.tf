@@ -118,3 +118,24 @@ resource "aws_instance" "vault" {
     Owner       = "Majid Zarkesh"
   }
 }
+
+# ------------------------------------------------------------------------------
+# KMS Key for Vault Auto-Unseal
+# ------------------------------------------------------------------------------
+resource "aws_kms_key" "vault_auto_unseal" {
+  description             = "KMS key for Vault auto-unseal (Vault Demo)"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = {
+    Name        = "vault-auto-unseal"
+    Project     = "Vault K8S Client Namespace Demo"
+    Environment = "Demo"
+    Owner       = "Majid Zarkesh"
+  }
+}
+
+resource "aws_kms_alias" "vault_auto_unseal" {
+  name          = "alias/vault-auto-unseal"
+  target_key_id = aws_kms_key.vault_auto_unseal.key_id
+}

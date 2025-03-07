@@ -38,7 +38,7 @@ api_addr = "http://0.0.0.0:8200"
 
 seal "awskms" {
   region     = "us-east-1"
-  kms_key_id = "REPLACE_WITH_YOUR_KMS_KEY_ID"
+  kms_key_id = "${aws_kms_key.vault_auto_unseal.id}"
 }
 
 ui = true

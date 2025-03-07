@@ -70,8 +70,8 @@ Uses Doormat’s credential server if available.
 configure/
 Contains configure-vault.yaml to set up Kubernetes auth in Vault.
 vault-install/
-user_data.tpl: Cloud-init template for installing Vault on EC2.
-vault-config.tpl: Basic Vault configuration file.
+user_data.hcl: Cloud-init template for installing Vault on EC2.
+vault-config.hcl: Basic Vault configuration file.
 Using Without Doormat (Manual Credentials)
 If you do NOT want to use Doormat and prefer to pass AWS credentials directly, modify:
 

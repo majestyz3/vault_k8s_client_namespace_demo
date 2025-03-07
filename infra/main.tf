@@ -103,21 +103,21 @@ resource "aws_instance" "vault" {
   vpc_security_group_ids = [aws_security_group.vault.id]
   key_name               = "vault-demo-key"
 
-  user_data = templatefile("${path.module}/vault-install/user_data.hcl", {
-  vault_version = "1.19.0+ent"
-  region        = var.aws_region
-  vault_config  = file("${path.module}/vault-install/vault-config.hcl")
-  vault_license = var.vault_license
-})
-
+  user_data = templatefile("${path.module}/vault-install/user_data.tpl", {
+    VAULT_VERSION  = "1.19.0+ent"
+    AWS_REGION     = var.aws_region
+    VAULT_LICENSE  = var.vault_license
+    KMS_KEY_ID     = aws_kms_key.vault_auto_unseal.key_id
+  })
 
   tags = {
-    Name        = "zarkesh-vault-demo-instance"
+    Name        = "vault-demo-instance"
     Project     = "Vault K8S Client Namespace Demo"
     Environment = "Demo"
     Owner       = "Majid Zarkesh"
   }
 }
+
 
 # ------------------------------------------------------------------------------
 # KMS Key for Vault Auto-Unseal

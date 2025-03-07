@@ -1,59 +1,64 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
-echo "🚀 Installing Vault Enterprise 1.19.0..."
+VAULT_VERSION="${1:-1.19.0+ent}"
+VAULT_LICENSE="${2}"
 
-# Update and install dependencies
-sudo yum update -y
-sudo yum install -y unzip jq
+echo "🚀 Installing Vault ${VAULT_VERSION}"
 
-# Download and install Vault
-VAULT_VERSION="1.19.0+ent"
-VAULT_ZIP="vault_${VAULT_VERSION}_linux_amd64.zip"
-
-curl -o /tmp/vault.zip "https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
-sudo unzip -o /tmp/vault.zip -d /usr/local/bin/
+# Install Vault
+cd /tmp
+curl -L -o vault.zip "https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip"
+unzip vault.zip
+sudo mv vault /usr/local/bin/vault
 sudo chmod +x /usr/local/bin/vault
 
-vault --version
+# Verify Vault works
+if ! /usr/local/bin/vault version; then
+  echo "❌ Vault installation failed."
+  exit 1
+fi
 
-# Create Vault user and directories
-sudo useradd --system --home /etc/vault.d --shell /bin/false vault || true
-sudo mkdir -p /opt/vault/data
-sudo mkdir -p /etc/vault.d
-sudo mkdir -p /etc/vault
+# Add Vault to PATH (optional - just to be safe)
+export PATH=$PATH:/usr/local/bin
 
-# Copy the configuration file and license (assumes they are SCP'd beforehand)
-sudo mv /home/ec2-user/vault-config.hcl /etc/vault.d/vault.hcl
-sudo mv /home/ec2-user/vault.hclic /etc/vault/vault.hclic
-sudo chown -R vault:vault /opt/vault /etc/vault /etc/vault.d
+# Write Vault configuration
+sudo tee /etc/vault/vault.hcl <<EOF
+storage "raft" {
+  path    = "/opt/vault/data"
+  node_id = "vault-1"
+}
 
-# Create Vault systemd service
-cat <<EOF | sudo tee /etc/systemd/system/vault.service
-[Unit]
-Description="HashiCorp Vault - A tool for managing secrets"
-Requires=network-online.target
-After=network-online.target
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  tls_disable = true
+}
 
-[Service]
-User=vault
-Group=vault
-ExecStart=/usr/local/bin/vault server -config=/etc/vault.d/vault.hcl
-ExecReload=/bin/kill --signal HUP \$MAINPID
-KillSignal=SIGTERM
-Restart=on-failure
-LimitMEMLOCK=infinity
+api_addr = "http://0.0.0.0:8200"
 
-[Install]
-WantedBy=multi-user.target
+seal "awskms" {
+  region     = "us-east-1"
+  kms_key_id = "REPLACE_WITH_YOUR_KMS_KEY_ID"
+}
+
+ui = true
 EOF
 
-# Enable and start Vault service
-sudo systemctl daemon-reload
+# Write Vault License
+sudo tee /etc/vault/vault.hclic <<EOF
+${VAULT_LICENSE}
+EOF
+
+# Enable and Start Vault Service
 sudo systemctl enable vault
 sudo systemctl start vault
-sudo systemctl status vault --no-pager
 
-# Final confirmation of Vault status
+# Final sanity check - verify Vault is running
 sleep 5
-vault status || sudo journalctl -u vault --no-pager
+if ! curl -s http://127.0.0.1:8200/v1/sys/health | jq .; then
+  echo "❌ Vault is not running correctly."
+  exit 1
+fi
+
+echo "✅ Vault installed and started successfully!"
+

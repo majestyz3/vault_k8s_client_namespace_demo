@@ -1,63 +1,59 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-echo "📦 Installing dependencies..."
-sudo yum install -y jq unzip
+echo "🚀 Installing Vault Enterprise 1.19.0..."
 
-echo "⬇️ Downloading Vault 1.19 Enterprise..."
+# Update and install dependencies
+sudo yum update -y
+sudo yum install -y unzip jq
+
+# Download and install Vault
 VAULT_VERSION="1.19.0+ent"
-curl -o /tmp/vault.zip "https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip"
+VAULT_ZIP="vault_${VAULT_VERSION}_linux_amd64.zip"
 
-echo "📂 Extracting Vault binary..."
+curl -o /tmp/vault.zip "https://releases.hashicorp.com/vault/${VAULT_VERSION}/${VAULT_ZIP}"
 sudo unzip -o /tmp/vault.zip -d /usr/local/bin/
-
-echo "🔒 Making Vault executable..."
 sudo chmod +x /usr/local/bin/vault
 
-echo "🔗 Adding Vault to system PATH via symlink..."
-sudo ln -sf /usr/local/bin/vault /usr/bin/vault
-
-echo "✅ Vault version installed:"
 vault --version
 
-echo "🛠️ Checking for required files..."
+# Create Vault user and directories
+sudo useradd --system --home /etc/vault.d --shell /bin/false vault || true
+sudo mkdir -p /opt/vault/data
+sudo mkdir -p /etc/vault.d
+sudo mkdir -p /etc/vault
 
-if [ ! -f /home/ec2-user/vault-config.hcl ]; then
-    echo "❌ Missing vault-config.hcl"
-    exit 1
-fi
+# Copy the configuration file and license (assumes they are SCP'd beforehand)
+sudo mv /home/ec2-user/vault-config.hcl /etc/vault.d/vault.hcl
+sudo mv /home/ec2-user/vault.hclic /etc/vault/vault.hclic
+sudo chown -R vault:vault /opt/vault /etc/vault /etc/vault.d
 
-if [ ! -f /home/ec2-user/vault.hclic ]; then
-    echo "❌ Missing vault.hclic"
-    exit 1
-fi
-
-echo "📂 Moving Vault license and config into place..."
-sudo mv /home/ec2-user/vault.hclic /etc/vault.hclic
-sudo cp /home/ec2-user/vault-config.hcl /etc/vault.hcl
-
-echo "🛠️ Configuring Vault systemd service..."
+# Create Vault systemd service
 cat <<EOF | sudo tee /etc/systemd/system/vault.service
 [Unit]
 Description="HashiCorp Vault - A tool for managing secrets"
-Documentation=https://www.vaultproject.io/docs/
-After=network.target
+Requires=network-online.target
+After=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/vault server -config=/etc/vault.hcl
+User=vault
+Group=vault
+ExecStart=/usr/local/bin/vault server -config=/etc/vault.d/vault.hcl
+ExecReload=/bin/kill --signal HUP \$MAINPID
+KillSignal=SIGTERM
 Restart=on-failure
-User=ec2-user
+LimitMEMLOCK=infinity
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-echo "🔄 Reloading systemd and enabling Vault service..."
+# Enable and start Vault service
 sudo systemctl daemon-reload
 sudo systemctl enable vault
 sudo systemctl start vault
+sudo systemctl status vault --no-pager
 
-echo "📊 Checking Vault status..."
-vault status || true
-
-echo "✅ Vault installation and service setup complete!"
+# Final confirmation of Vault status
+sleep 5
+vault status || sudo journalctl -u vault --no-pager

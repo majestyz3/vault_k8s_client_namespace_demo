@@ -104,11 +104,12 @@ resource "aws_instance" "vault" {
   key_name               = "vault-demo-key"
 
   user_data = templatefile("${path.module}/vault-install/user_data.hcl", {
-    vault_version = "1.19.0+ent"
-    region        = var.aws_region
-    vault_config  = file("${path.module}/vault-install/vault-config.hcl")
-    vault_license = var.vault_license  # Directly pass the license string
-  })
+  vault_version = "1.19.0+ent"
+  region        = var.aws_region
+  vault_config  = file("${path.module}/vault-install/vault-config.hcl")
+  vault_license = var.vault_license
+})
+
 
   tags = {
     Name        = "zarkesh-vault-demo-instance"

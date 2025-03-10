@@ -1,5 +1,3 @@
-
-
 #!/bin/bash
 set -e
 
@@ -7,6 +5,8 @@ set -e
 VAULT_VERSION="${1:-1.19.0}"
 VAULT_LICENSE="${2}"
 KMS_KEY_ID="${3}"
+IS_DR_VAULT="${4:-false}"  # Determines if this is a DR Vault
+PRIMARY_VAULT_ADDR="${5:-}" # Needed for DR Vault
 
 echo "🚀 Installing Vault ${VAULT_VERSION}"
 
@@ -44,12 +44,14 @@ export PATH=$PATH:/usr/local/bin
 # Create necessary directories
 sudo mkdir -p /etc/vault /opt/vault/data
 
-# Write Vault configuration file
+# Determine Vault configuration based on DR status
 echo "📝 Writing Vault configuration..."
-sudo tee /etc/vault/vault.hcl > /dev/null <<EOF
+if [ "$IS_DR_VAULT" == "true" ]; then
+    echo "🔄 Configuring Vault as a DR Secondary"
+    sudo tee /etc/vault/vault.hcl > /dev/null <<EOF
 storage "raft" {
   path    = "/opt/vault/data"
-  node_id = "vault-1"
+  node_id = "dr-vault"
 }
 
 listener "tcp" {
@@ -57,7 +59,10 @@ listener "tcp" {
   tls_disable = true
 }
 
-api_addr = "http://0.0.0.0:8200"
+replication {
+  performance_secondary = true
+  primary_api_addr = "${PRIMARY_VAULT_ADDR}"
+}
 
 seal "awskms" {
   region     = "us-east-1"
@@ -66,6 +71,30 @@ seal "awskms" {
 
 ui = true
 EOF
+else
+    echo "🔄 Configuring Vault as a Primary Server"
+    sudo tee /etc/vault/vault.hcl > /dev/null <<EOF
+storage "raft" {
+  path    = "/opt/vault/data"
+  node_id = "primary-vault"
+}
+
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  tls_disable = true
+}
+
+api_addr = "http://0.0.0.0:8200"
+cluster_addr = "http://0.0.0.0:8201"
+
+seal "awskms" {
+  region     = "us-east-1"
+  kms_key_id = "${KMS_KEY_ID}"
+}
+
+ui = true
+EOF
+fi
 
 # Ensure Vault license file exists
 echo "📝 Writing Vault license..."
@@ -105,11 +134,47 @@ echo "🔄 Enabling and starting Vault service..."
 sudo systemctl enable vault
 sudo systemctl start vault
 
-# Final check: Verify Vault is running
-sleep 5
-if ! curl -s http://127.0.0.1:8200/v1/sys/health | jq .; then
-  echo "❌ Vault is not running correctly."
-  exit 1
+# Ensure jq is installed before checking Vault health
+echo "🔧 Installing jq..."
+sudo yum install -y jq
+
+# Wait for Vault to be responsive before continuing
+echo "⏳ Waiting for Vault to become available..."
+for i in {1..10}; do
+  if curl -s http://127.0.0.1:8200/v1/sys/health | jq .; then
+    echo "✅ Vault is up and running!"
+    break
+  fi
+  echo "⏳ Waiting for Vault to start... Attempt $i/10"
+  sleep 5
+done
+
+# If this is the DR Vault, join it to the Primary
+if [ "$IS_DR_VAULT" == "true" ]; then
+    echo "🔄 Initializing DR Vault Replication..."
+
+    # Wait for Primary Vault to be ready
+    echo "⏳ Checking if Primary Vault is available at $PRIMARY_VAULT_ADDR..."
+    until curl -s "${PRIMARY_VAULT_ADDR}/v1/sys/health" | jq .; do
+      echo "⏳ Waiting for Primary Vault to be online..."
+      sleep 5
+    done
+    echo "✅ Primary Vault is up!"
+
+    # Fetch root token from the primary Vault
+    echo "🔑 Fetching root token from Primary Vault..."
+    PRIMARY_VAULT_TOKEN=$(ssh -o StrictHostKeyChecking=no -i /home/ec2-user/vault-demo-key.pem ec2-user@"$(echo $PRIMARY_VAULT_ADDR | sed 's|http://||g')" "cat /home/ec2-user/root-token.txt")
+    export VAULT_TOKEN="$PRIMARY_VAULT_TOKEN"
+
+    # Authenticate DR Vault to Primary Vault
+    echo "🔐 Logging into Primary Vault from DR Vault..."
+    vault login "$VAULT_TOKEN"
+
+    # Join DR Vault to the Primary Vault
+    echo "🔄 Joining DR Vault to the Primary Vault..."
+    vault operator raft join "${PRIMARY_VAULT_ADDR}"
+
+    echo "✅ DR Vault successfully joined the Primary Vault!"
 fi
 
 echo "✅ Vault installed and started successfully!"

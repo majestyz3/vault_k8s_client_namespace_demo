@@ -10,3 +10,13 @@ terraform {
 provider "aws" {
   region = var.aws_region
 }
+
+
+provider "vault" {
+  address = "http://${aws_instance.vault.public_ip}:8200"
+}
+
+provider "vault" {
+  alias   = "dr"
+  address = "http://${aws_instance.vault_dr.public_ip}:8200"
+}

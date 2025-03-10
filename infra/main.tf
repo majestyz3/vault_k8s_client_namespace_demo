@@ -19,7 +19,7 @@ module "vpc" {
 # EKS Cluster - Kubernetes Cluster for Demo
 # ------------------------------------------------------------------------------
 module "eks" {
-  source = "terraform-aws-modules/eks/aws"
+  source          = "terraform-aws-modules/eks/aws"
   cluster_name    = "vault-demo-cluster"
   cluster_version = "1.28"
 
@@ -28,14 +28,13 @@ module "eks" {
 
   eks_managed_node_groups = {
     default = {
-      desired_size = 2
-      max_size     = 3
-      min_size     = 1
+      desired_size   = 2
+      max_size       = 3
+      min_size       = 1
       instance_types = ["t3.medium"]
     }
   }
 }
-
 
 # ------------------------------------------------------------------------------
 # Lookup Latest Amazon Linux 2 AMI
@@ -52,49 +51,77 @@ data "aws_ami" "amazon_linux" {
 }
 
 # ------------------------------------------------------------------------------
-# Security Group for Vault Instance
+# Security Group for Vault Instances (Primary & DR)
 # ------------------------------------------------------------------------------
 resource "aws_security_group" "vault" {
   name        = "vault-sg"
+  description = "Security group for Vault instances"
   vpc_id      = module.vpc.vpc_id
 
+  # Allow Vault API/UI Access (Port 8200)
   ingress {
     from_port   = 8200
     to_port     = 8200
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.my_ip]  # 🔹 Restrict Vault API/UI access to your IP
   }
 
+  # Allow Vault cluster communication (Port 8201)
+  ingress {
+    from_port   = 8201
+    to_port     = 8201
+    protocol    = "tcp"
+    cidr_blocks = module.vpc.private_subnets_cidr_blocks  # 🔹 Allow cluster nodes to communicate
+  }
+
+  # Allow SSH Access (Port 22)
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.my_ip]  # 🔹 Restrict SSH access to your IP
   }
 
+  # Outbound traffic (allow all)
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Name    = "vault-security-group"
+    Project = "Vault K8S Client Namespace Demo"
+  }
 }
 
+
 # ------------------------------------------------------------------------------
-# public ip for vault  
+# Elastic IP for Vault Instances  
 # ------------------------------------------------------------------------------
 resource "aws_eip" "vault" {
   instance = aws_instance.vault.id
   domain   = "vpc"
 
   tags = {
-    Name = "zarkesh-vault-demo-eip"
+    Name    = "vault-primary-eip"
+    Project = "Vault K8S Client Namespace Demo"
+  }
+}
+
+resource "aws_eip" "vault_dr" {
+  instance = aws_instance.vault_dr.id
+  domain   = "vpc"
+
+  tags = {
+    Name    = "vault-dr-eip"
     Project = "Vault K8S Client Namespace Demo"
   }
 }
 
 # ------------------------------------------------------------------------------
-# EC2 Instance for Vault Server
+# EC2 Instance for Vault Primary Server
 # ------------------------------------------------------------------------------
 resource "aws_instance" "vault" {
   ami                    = data.aws_ami.amazon_linux.id
@@ -103,21 +130,46 @@ resource "aws_instance" "vault" {
   vpc_security_group_ids = [aws_security_group.vault.id]
   key_name               = "vault-demo-key"
 
-  user_data = templatefile("${path.module}/vault-install/user_data.tpl", {
-    VAULT_VERSION  = "1.19.0+ent"
-    AWS_REGION     = var.aws_region
-    VAULT_LICENSE  = var.vault_license
-    KMS_KEY_ID     = aws_kms_key.vault_auto_unseal.key_id
-  })
+  user_data = templatefile("${path.module}/vault-install/user_data_primary.tpl", {
+  VAULT_VERSION  = "1.19.0+ent"
+  AWS_REGION     = var.aws_region
+  VAULT_LICENSE  = var.vault_license
+  KMS_KEY_ID     = aws_kms_key.vault_auto_unseal.key_id
+})
+
 
   tags = {
-    Name        = "vault-demo-instance"
+    Name        = "vault-primary-instance"
     Project     = "Vault K8S Client Namespace Demo"
-    Environment = "Demo"
+    Environment = "zarkesh-demo"
     Owner       = "Majid Zarkesh"
   }
 }
 
+# ------------------------------------------------------------------------------
+# EC2 Instance for Vault Disaster Recovery Server
+# ------------------------------------------------------------------------------
+resource "aws_instance" "vault_dr" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.medium"
+  subnet_id              = module.vpc.public_subnets[1] # 🔹 Uses second subnet for redundancy
+  vpc_security_group_ids = [aws_security_group.vault.id]
+  key_name               = "vault-demo-key"
+
+user_data = templatefile("${path.module}/vault-install/user_data_dr.tpl", {
+  VAULT_VERSION  = "1.19.0+ent"
+  AWS_REGION     = var.aws_region
+  VAULT_LICENSE  = var.vault_license
+  KMS_KEY_ID     = aws_kms_key.vault_auto_unseal.key_id
+  PRIMARY_VAULT_IP  = "http://${aws_instance.vault.private_ip}:8200"
+})
+  tags = {
+    Name        = "vault-dr-instance"
+    Project     = "Vault K8S Client Namespace Demo"
+    Environment = "zarkesh-demo"
+    Owner       = "Majid Zarkesh"
+  }
+}
 
 # ------------------------------------------------------------------------------
 # KMS Key for Vault Auto-Unseal

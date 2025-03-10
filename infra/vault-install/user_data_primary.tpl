@@ -41,8 +41,8 @@ listener "tcp" {
 api_addr = "http://0.0.0.0:8200"
 
 seal "awskms" {
-  region     = "${AWS_REGION}"
-  kms_key_id = "${KMS_KEY_ID}"
+  region     = "$${AWS_REGION}"
+  kms_key_id = "$${KMS_KEY_ID}"
 }
 
 ui = true
@@ -50,7 +50,7 @@ EOF
 
 # Write Vault License
 sudo tee /etc/vault/vault.hclic <<EOF
-${VAULT_LICENSE}
+$${VAULT_LICENSE}
 EOF
 
 # Ensure Vault data directory exists
@@ -70,4 +70,3 @@ if ! curl -s http://127.0.0.1:8200/v1/sys/health | jq .; then
 fi
 
 echo "✅ Vault installed and started successfully!"
-

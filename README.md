@@ -1,112 +1,108 @@
-Vault Kubernetes Client Namespace Demo
+# Vault Kubernetes Client Namespace Demo
 
-Overview
-This project demonstrates how to deploy a HashiCorp Vault instance on AWS EC2 and an EKS cluster to showcase Kubernetes client namespace authentication with Vault. The project is split into two key phases:
+This repository contains Terraform configurations and scripts for deploying a **Highly Available HashiCorp Vault** setup with **Disaster Recovery (DR)** on AWS. The setup includes:
 
-Infrastructure Setup: This includes creating a VPC, EKS cluster, and Vault EC2 instance.
-Vault Configuration: This handles enabling Kubernetes auth, configuring backends, and setting up roles and policies.
+✅ **Primary Vault** on EC2  
+✅ **Disaster Recovery (DR) Vault** on EC2  
+✅ **EKS Cluster** for Kubernetes workloads  
+✅ **AWS KMS for Vault Auto-Unseal**  
+✅ **Automated Deployment with `all_in_one_deploy.sh`**  
 
-Directory Structure
+---
 
-vault_k8s_client_namespace_demo/
-│-- infra/                   # Terraform code for infrastructure setup
-│-- configure/                # Ansible code for Vault configuration
-│-- vault-install/            # Contains Vault installation and configuration templates
-│-- deployment-outputs.txt    # Captured outputs after deployment
-│-- vault.hclic                # Vault Enterprise license file (gitignored)
-│-- vault-demo-key.pem         # SSH private key for Vault instance (gitignored)
-│-- all_in_one_deploy.sh      # Main deployment script
-│-- README.md                  # This file
-│-- .gitignore                  # Ensures sensitive files are not pushed to Git
-Prerequisites
-Terraform >= 1.3.0
-AWS CLI installed & configured
-Doormat CLI (if using Doormat for credentials)
-Ansible installed (for configuration phase)
-HashiCorp Vault binary (for local testing)
-Deployment Process
-Step 1 - AWS Credentials via Doormat (Recommended)
-Start the Doormat Credential Server:
+## **📂 Folder Structure**
+```
+repo-root/
+│── ansible-configure/        # Ansible configurations (if used)
+│── configure/                # Additional configurations
+│── infra/                    # Infrastructure-as-Code (Terraform)
+│   ├── .terraform/           # Terraform local state directory
+│   ├── vault-install/        # Vault installation scripts
+│   │   ├── install_vault.sh              # Install script for Vault
+│   │   ├── user_data_primary.tpl         # User data for Primary Vault
+│   │   ├── user_data_dr.tpl              # User data for DR Vault
+│   │   ├── vault-config-primary.hcl      # Config for Primary Vault
+│   │   ├── vault-config-dr.hcl           # Config for DR Vault
+│   │   ├── vault.hclic                   # Vault Enterprise License
+│   ├── main.tf               # Terraform main configuration
+│   ├── outputs.tf            # Terraform outputs
+│   ├── providers.tf          # Terraform provider configurations
+│   ├── variables.tf          # Terraform variables
+│── all_in_one_deploy.sh      # End-to-end deployment script
+│── deployment-outputs.txt    # Captured Terraform outputs
+│── vault-demo-key.pem        # SSH Private Key (ensure this is NOT shared)
+│── README.md                 # This file
+│── .gitignore                # Git ignore for sensitive files
+```
 
+---
 
-doormat cred-server
-The all_in_one_deploy.sh script will automatically detect the running credential server and configure Terraform to pull credentials from it.
+## **🚀 Deployment Instructions**
 
-Step 2 - Run the All-In-One Deployment Script
-This script handles everything:
+### **1️⃣ Install Prerequisites**
+Make sure you have:
+- **Terraform (>=1.3)**
+- **AWS CLI**
+- **Doormat CLI** (For HashiCorp internal AWS authentication)
+- **jq** (For JSON parsing)
+- **Bash**
 
-bash
-Copy
-Edit
+### **2️⃣ Retrieve AWS Credentials**
+Run:
+```bash
+doormat aws export --account aws_majid.zarkesh_test
+```
+
+### **3️⃣ Deploy Infrastructure**
+Run:
+```bash
 ./all_in_one_deploy.sh
-The script will:
+```
 
-Fetch credentials from Doormat
-Run terraform init and terraform apply in the infra/ folder
-Capture outputs (like public IP) into deployment-outputs.txt
-Copy required files to the Vault EC2 instance (license, install script)
-Install Vault, initialize it, and unseal it.
-Important Outputs
-After the script runs, deployment-outputs.txt will contain:
+This script will:
+✅ **Initialize and apply Terraform**  
+✅ **Capture output variables**  
+✅ **Upload Vault configurations**  
+✅ **Install Vault on EC2 instances**  
+✅ **Initialize and unseal Vault**  
 
-Vault Public IP
-EKS Cluster Endpoint
-EKS Cluster CA Cert
-These will be needed for the configure phase.
+### **4️⃣ Access Vault UI**
+- **Primary Vault:** `http://<vault_public_ip>:8200`
+- **DR Vault:** `http://<vault_dr_public_ip>:8200`
 
-Step 3 - Configure Vault (after deployment)
-Navigate to configure/ and run the Ansible playbook:
+Check the `deployment-outputs.txt` file for credentials.
 
+---
 
-cd configure
-ansible-playbook configure-vault.yaml
-This configures Kubernetes authentication in Vault.
+## **🛠 Maintenance & Debugging**
+To manually SSH into Vault instances:
+```bash
+ssh -i vault-demo-key.pem ec2-user@<vault_public_ip>
+```
 
-Directory Details
-infra/
-Contains Terraform code for VPC, EKS, and EC2 instance.
-terraform.tfvars defines variables (like region, key name).
-Uses Doormat’s credential server if available.
-configure/
-Contains configure-vault.yaml to set up Kubernetes auth in Vault.
-vault-install/
-user_data.hcl: Cloud-init template for installing Vault on EC2.
-vault-config.hcl: Basic Vault configuration file.
-Using Without Doormat (Manual Credentials)
-If you do NOT want to use Doormat and prefer to pass AWS credentials directly, modify:
+To check Vault logs:
+```bash
+sudo journalctl -u vault --no-pager
+```
 
-1. terraform.tfvars
-Set:
+To check Terraform outputs:
+```bash
+terraform output
+```
 
+---
 
-aws_access_key = "your-access-key"
-aws_secret_key = "your-secret-key"
-aws_session_token = "your-session-token" # Optional if using temporary credentials
-2. providers.tf (in infra/)
-Replace the AWS provider block with:
+## **📌 Notes**
+- The **use-case-tf** folder is a separate project and not relevant to this repo.
+- The DR Vault is automatically configured to replicate secrets from the Primary Vault.
+- **Security Reminder**: Make sure to keep your Vault license and unseal keys secure.
 
+---
 
-provider "aws" {
-  region     = var.aws_region
-  access_key = var.aws_access_key
-  secret_key = var.aws_secret_key
-  token      = var.aws_session_token
-}
+## **📜 License**
+This project is licensed under the MIT License.
 
-Cleanup
-To clean up all deployed resources:
+---
 
-
-cd infra
-terraform destroy
-Notes
-The vault.hclic file should never be committed to git.
-Ensure vault-demo-key.pem is also ignored via .gitignore.
-Both files need to be available locally when running the script.
-Example Environment File
-Example terraform.tfvars:
-
-
-aws_region = "us-east-1"
-key_name   = "vault-demo-key"
-ssh_private_key = "../vault-demo-key.pem"
+### **📧 Contact**
+For any questions, feel free to reach out to **Majid Zarkesh**.

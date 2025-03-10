@@ -32,3 +32,5 @@ outputs.json
 
 *ansible-configure
 *.txt
+
+*use-case-tf

@@ -13,4 +13,35 @@ variable "vault_license" {
   type        = string
 }
 
+variable "vault_address" {
+  description = "Vault Enterprise primary cluster address"
+  type        = string
+  default     = ""
+}
+
+variable "vault_dr_address" {
+  description = "Vault Enterprise disaster recovery cluster address"
+  type        = string
+  default     = ""
+}
+
+variable "allowed_ssh_ip" {
+  description = "IP address allowed for SSH access (dynamically assigned from script)"
+  type        = string
+  default     = ""
+}
+
+variable "kms_key_id" {
+  description = "AWS KMS Key ID for Vault Auto-Unseal"
+  type        = string
+  default     = ""
+}
+
+variable "my_ip" {
+  description = "Your public IP address for SSH and API access"
+  type        = string
+}
+
+
+
 

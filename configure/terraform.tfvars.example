@@ -1,0 +1,4 @@
+vault_addr        = "http://127.0.0.1:8200"
+vault_root_token  = "your-root-token-here"
+eks_cluster_endpoint = "your-eks-cluster-endpoint"
+eks_cluster_ca    = "your-eks-cluster-ca"

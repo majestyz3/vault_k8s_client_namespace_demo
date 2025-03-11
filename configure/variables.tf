@@ -1,5 +1,20 @@
-variable "vault_address" {}
-variable "vault_root_token" {}
+variable "vault_addr" {
+  description = "Vault server address"
+  type        = string
+  default     = "127.0.0.1"
+}
 
-variable "eks_cluster_endpoint" {}
-variable "eks_cluster_ca" {}
+variable "vault_root_token" {
+  description = "Vault root token"
+  type        = string
+}
+
+variable "eks_cluster_endpoint" {
+  description = "EKS cluster API endpoint"
+  type        = string
+}
+
+variable "eks_cluster_ca" {
+  description = "EKS cluster CA certificate"
+  type        = string
+}

@@ -10,12 +10,14 @@ storage "raft" {
   node_id = "vault-1"
 }
 
-api_addr     = "http://127.0.0.1:8200"
-cluster_addr = "http://10.0.1.137:8201"  
+api_addr     = "http://0.0.0.0:8200"
+cluster_addr = "http://${PRIVATE_IP}:8201"  # Ensure PRIVATE_IP is correctly substituted
 
 seal "awskms" {
   region     = "us-east-1"
-  kms_key_id = "arn:aws:kms:us-east-1:656794478190:key/46c4ab07-d784-452b-bc1a-734d455ba0c8"
+  kms_key_id = "${KMS_KEY_ID}"  # Ensure Terraform replaces this correctly
 }
 
 license_path = "/etc/vault/vault.hclic"
+
+

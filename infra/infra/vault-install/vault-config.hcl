@@ -11,7 +11,7 @@ storage "raft" {
 }
 
 api_addr     = "http://127.0.0.1:8200"
-cluster_addr = "http://10.0.1.137:8201"  
+cluster_addr = "http://10.0.1.217:8201"  
 
 seal "awskms" {
   region     = "us-east-1"

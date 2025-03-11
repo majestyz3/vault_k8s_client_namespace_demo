@@ -13,4 +13,7 @@ variable "vault_license" {
   type        = string
 }
 
-
+variable "my_ip" {
+  description = "Your public IP address to allow access to Vault"
+  type        = string
+}

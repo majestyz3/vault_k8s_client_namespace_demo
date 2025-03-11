@@ -46,3 +46,4 @@ terraform.tfvars
 *.key
 vault.hclic
 *.json
+use-case-tf/*

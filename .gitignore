@@ -32,3 +32,8 @@ outputs.json
 
 *ansible-configure
 *.txt
+use-case-tf/*
+
+infra/.terraform.lock.hcl
+
+

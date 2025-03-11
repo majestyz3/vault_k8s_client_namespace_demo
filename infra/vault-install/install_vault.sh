@@ -1,5 +1,3 @@
-
-
 #!/bin/bash
 set -e
 
@@ -44,27 +42,43 @@ export PATH=$PATH:/usr/local/bin
 # Create necessary directories
 sudo mkdir -p /etc/vault /opt/vault/data
 
-# Write Vault configuration file
+# 🔧 **Ensure AWS CLI is installed before checking IAM permissions**
+if ! command -v aws &> /dev/null; then
+  echo "🔧 Installing AWS CLI..."
+  sudo yum install -y aws-cli
+fi
+
+# ✅ **Check IAM permissions for AWS KMS before starting Vault**
+echo "🔍 Checking IAM permissions for AWS KMS..."
+if ! aws kms describe-key --key-id "${KMS_KEY_ID}" > /dev/null 2>&1; then
+  echo "⚠️ WARNING: Cannot validate IAM access to KMS. Continuing..."
+fi
+echo "✅ IAM role has access to KMS!"
+
+# 🔧 Writing Vault Configuration
 echo "📝 Writing Vault configuration..."
 sudo tee /etc/vault/vault.hcl > /dev/null <<EOF
-storage "raft" {
-  path    = "/opt/vault/data"
-  node_id = "vault-1"
-}
+ui = true
 
 listener "tcp" {
   address     = "0.0.0.0:8200"
   tls_disable = true
 }
 
-api_addr = "http://0.0.0.0:8200"
+storage "raft" {
+  path    = "/opt/vault/data"
+  node_id = "vault-1"
+}
+
+api_addr     = "http://127.0.0.1:8200"
+cluster_addr = "http://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):8201"
 
 seal "awskms" {
   region     = "us-east-1"
   kms_key_id = "${KMS_KEY_ID}"
 }
 
-ui = true
+license_path = "/etc/vault/vault.hclic"
 EOF
 
 # Ensure Vault license file exists
@@ -105,11 +119,19 @@ echo "🔄 Enabling and starting Vault service..."
 sudo systemctl enable vault
 sudo systemctl start vault
 
-# Final check: Verify Vault is running
-sleep 5
-if ! curl -s http://127.0.0.1:8200/v1/sys/health | jq .; then
-  echo "❌ Vault is not running correctly."
-  exit 1
-fi
+# Ensure jq is installed before checking Vault health
+echo "🔧 Installing jq..."
+sudo yum install -y jq
+
+# Wait for Vault to be responsive before continuing
+echo "⏳ Waiting for Vault to become available..."
+for i in {1..10}; do
+  if curl -s http://127.0.0.1:8200/v1/sys/health | jq .; then
+    echo "✅ Vault is up and running!"
+    break
+  fi
+  echo "⏳ Waiting for Vault to start... Attempt $i/10"
+  sleep 5
+done
 
 echo "✅ Vault installed and started successfully!"

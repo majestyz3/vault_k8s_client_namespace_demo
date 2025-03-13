@@ -1,4 +1,28 @@
-vault_addr        = "http://127.0.0.1:8200"
-vault_root_token  = "your-root-token-here"
-eks_cluster_endpoint = "your-eks-cluster-endpoint"
-eks_cluster_ca    = "your-eks-cluster-ca"
+# ------------------------------------------------------------------------------
+# Terraform Variables - Environment Configuration
+# ------------------------------------------------------------------------------
+
+# AWS Region
+aws_region = "us-east-1"
+
+# EKS Cluster Configuration
+eks_cluster_name = "<your-name>-eks-cluster"
+
+# Vault Configuration
+vault_addr  = "http://<VAULT_SERVER_IP>:8200"  # Replace with actual Vault server IP
+vault_token = "<YOUR_VAULT_ROOT_TOKEN>"        # Replace with actual Vault root token
+
+# Kubernetes Authentication Backend Configuration
+vault_k8s_auth_path = "kubernetes"
+
+# Application Namespace & Service Account
+app_namespace       = "<your-name>-app-namespace"
+app_service_account = "<your-name>-app-sa"
+
+# Vault Role & Policies
+vault_role         = "<your-name>-app-role"
+vault_policy_name  = "<your-name>-app-policy"
+
+# Vault Secrets Configuration
+vault_secret_path  = "secret/data/<your-name>-app"
+vault_secret_key   = "my-secret-key"

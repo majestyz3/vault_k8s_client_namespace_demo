@@ -199,18 +199,61 @@ resource "aws_eip" "vault" {
 }
 
 # ------------------------------------------------------------------------------
-# Generate Vault Configuration File
+# ec2 secuirty group
 # ------------------------------------------------------------------------------
-resource "local_file" "vault_config" {
-  content  = templatefile("${path.module}/vault-install/vault-config.tpl", {
-    PRIVATE_IP  = aws_instance.vault.private_ip
-    KMS_KEY_ID  = aws_kms_key.vault_auto_unseal.arn
+
+resource "aws_security_group" "ec2_instance" {
+  name        = "ec2-instance-sg"
+  description = "Security group for EC2 instance"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "ec2-instance-sg"
+  }
+}
+
+resource "aws_iam_role" "eks_role" {
+  name = "eks-cluster-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
   })
-  filename = "${path.module}/infra/vault-install/vault-config.hcl"
+
+  tags = {
+    Name = "eks-cluster-role"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.eks_role.name
 }
 
 # ------------------------------------------------------------------------------
-# EKS 
+# Generate Vault Configuration File
 # ------------------------------------------------------------------------------
 module "eks" {
   source          = "terraform-aws-modules/eks/aws"
@@ -229,3 +272,39 @@ module "eks" {
     }
   }
 }
+
+# Move security group rules out of the module block
+resource "aws_security_group_rule" "eks_ingress_from_ec2" {
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  security_group_id        = module.eks.cluster_security_group_id
+  source_security_group_id = aws_security_group.ec2_instance.id
+}
+
+resource "aws_security_group_rule" "ec2_egress_to_eks" {
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  security_group_id = aws_security_group.ec2_instance.id
+  cidr_blocks       = ["10.0.0.0/16"]
+}
+
+
+resource "aws_eks_cluster" "vault" {
+  name     = "vault-demo-cluster"
+  role_arn = aws_iam_role.eks_role.arn
+
+  vpc_config {
+    subnet_ids              = module.vpc.private_subnets
+    endpoint_private_access = true
+    endpoint_public_access  = true  
+    public_access_cidrs     = ["0.0.0.0/0"]
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.eks_cluster]
+}
+
+
